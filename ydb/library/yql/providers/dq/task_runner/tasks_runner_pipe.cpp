@@ -585,7 +585,7 @@ public:
         if (protocolVersion <= 1) {
             return std::numeric_limits<i64>::max();
         }
-        
+
         if (protocolVersion < 6) {
             NDqProto::TCommandHeader header;
             header.SetVersion(2);
@@ -614,7 +614,7 @@ public:
         header.SetChannelId(ChannelId);
         header.Save(&Output);
 
-        i64 written = 0; 
+        i64 written = 0;
         TCountingOutput countingOutput(&Output);
         data.Proto.Save(&countingOutput);
         if (data.IsOOB()) {
@@ -1013,7 +1013,7 @@ public:
 
     // <| producer methods
     [[nodiscard]]
-    bool IsFull() const override {
+    TDqFillLevel GetFillLevel() const override {
         ythrow yexception() << "unimplemented";
     };
 
@@ -1175,7 +1175,7 @@ public:
     const TDqOutputStats& GetPushStats() const override {
         return PushStats;
     }
-    
+
     const TDqAsyncOutputBufferStats& GetPopStats() const override {
         return PopStats;
     }
@@ -1249,7 +1249,7 @@ public:
         Y_ABORT("Checkpoints are not supported");
     }
 
-    bool IsFull() const override {
+    TDqFillLevel GetFillLevel() const override {
         Y_ABORT("Unimplemented");
     }
 
@@ -1542,7 +1542,7 @@ private:
 
         {
             auto guard = BindAllocator({});
-            ProgramNode = DeserializeRuntimeNode(Task.GetProgram().GetRaw(), GetTypeEnv()); 
+            ProgramNode = DeserializeRuntimeNode(Task.GetProgram().GetRaw(), GetTypeEnv());
         }
 
         auto& programStruct = static_cast<TStructLiteral&>(*ProgramNode.GetNode());
