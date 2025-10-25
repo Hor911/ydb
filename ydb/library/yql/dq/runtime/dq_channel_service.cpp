@@ -48,7 +48,12 @@ void TLocalBuffer::Push(TDataChunk&& data) {
     PushStats.Rows += data.Rows;
     PushStats.Bytes += data.Bytes;
     InflightBytes += data.Bytes;
-    // *Registry->LocalBufferBytes += data.Bytes;
+
+    PushBytesDelta += data.Bytes;
+    if (PushBytesDelta >= 4_KB || data.Finished) {
+        *Registry->LocalBufferBytes += PushBytesDelta;
+        PushBytesDelta = 0;
+    }
 
     std::lock_guard lock(Mutex);
 
@@ -143,6 +148,11 @@ void TOutputDescriptor::AddPushBytes(ui64 bytes) {
         }
         NeedToNotifyOutput = true;
     }
+    PushBytesDelta += bytes;
+    if (PushBytesDelta >= 4_KB) {
+        *OutputBufferBytes += PushBytesDelta;
+        PushBytesDelta = 0;
+    }
 }
 
 void TOutputDescriptor::UpdatePopBytes(ui64 bytes) {
@@ -204,6 +214,10 @@ bool TOutputDescriptor::IsFlushed() {
 
 void TOutputDescriptor::Terminate() {
     Terminated.store(true);
+    if (PushBytesDelta) {
+        *OutputBufferBytes += PushBytesDelta;
+        PushBytesDelta = 0;
+    }
 }
 
 bool TOutputDescriptor::IsTerminatedOrAborted() {
@@ -292,6 +306,13 @@ bool TInputBuffer::IsEmpty() {
 
 void TInputBuffer::PushDataChunk(TDataChunk&& data) {
     std::lock_guard lock(Mutex);
+
+    PushBytesDelta += data.Bytes;
+    if (PushBytesDelta >= 4_KB || data.Finished) {
+        *InputBufferBytes += PushBytesDelta;
+        PushBytesDelta = 0;
+    }
+
     Queue.emplace(std::move(data));
     if (NeedToNotify) {
         NeedToNotify = false;
@@ -910,7 +931,7 @@ void TNodeState::Handle(TEvPrivate::TEvUpdateProgress::TPtr& ev) {
 std::shared_ptr<TOutputBuffer> TNodeState::CreateOutputBuffer(const TChannelInfo& info, ui64 maxInflightBytes, ui64 minInflightBytes) {
     auto self = Self.lock();
     Y_ENSURE(self);
-    auto descriptor = std::make_shared<TOutputDescriptor>(info, ActorSystem, maxInflightBytes, minInflightBytes);
+    auto descriptor = std::make_shared<TOutputDescriptor>(info, ActorSystem, OutputBufferBytes, maxInflightBytes, minInflightBytes);
     std::lock_guard lock(Mutex);
     auto [_, inserted] = OutputDescriptors.emplace(info, descriptor);
     Y_ENSURE(inserted);
@@ -941,7 +962,7 @@ std::shared_ptr<TInputBuffer> TNodeState::GetOrCreateInputBuffer(const TChannelI
         return {};
     }
 
-    auto result = std::make_shared<TInputBuffer>(NodeActorId, info, ActorSystem);
+    auto result = std::make_shared<TInputBuffer>(NodeActorId, info, ActorSystem, InputBufferBytes);
     InputBuffers.emplace(info, result);
     (*InputBufferCount)++;
     if (!binded) {

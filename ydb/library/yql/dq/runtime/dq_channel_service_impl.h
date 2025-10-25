@@ -210,6 +210,7 @@ public:
     bool NeedToNotifyInput = false;
     std::atomic<bool> EarlyFinished;
     std::atomic<bool> InputBinded;
+    ui64 PushBytesDelta = 0;
 };
 
 class TOutputBuffer;
@@ -217,7 +218,7 @@ class TNodeState;
 
 class TOutputDescriptor {
 public:
-    TOutputDescriptor(const TChannelInfo& info, NActors::TActorSystem* actorSystem, ui64 maxInflightBytes, ui64 minInflightBytes)
+    TOutputDescriptor(const TChannelInfo& info, NActors::TActorSystem* actorSystem, ::NMonitoring::TDynamicCounters::TCounterPtr outputBufferBytes, ui64 maxInflightBytes, ui64 minInflightBytes)
         : Info(info)
         , ActorSystem(actorSystem)
         , PushBytes(0)
@@ -228,6 +229,7 @@ public:
         , Terminated(false)
         , Aborted(false)
         , Flushed(false)
+        , OutputBufferBytes(outputBufferBytes)
     {}
     void AddPushBytes(ui64 bytes);
     void UpdatePopBytes(ui64 bytes);
@@ -258,6 +260,8 @@ public:
     ui64 GenMajor = 0;
     std::atomic<bool> Aborted;
     std::atomic<bool> Flushed;
+    ::NMonitoring::TDynamicCounters::TCounterPtr OutputBufferBytes;
+    ui64 PushBytesDelta = 0;
 };
 
 struct TOutputDescriptorCompare {
@@ -326,13 +330,14 @@ public:
         Deleted
     };
 
-    TInputBuffer(NActors::TActorId nodeActorId, const TChannelInfo& info, NActors::TActorSystem* actorSystem)
+    TInputBuffer(NActors::TActorId nodeActorId, const TChannelInfo& info, NActors::TActorSystem* actorSystem, ::NMonitoring::TDynamicCounters::TCounterPtr inputBufferBytes)
         : NodeActorId(nodeActorId)
         , Info(info)
         , ActorSystem(actorSystem)
         , State(EState::Init)
         , EarlyFinished(false)
-        , PopBytes(0) {
+        , PopBytes(0)
+        , InputBufferBytes(inputBufferBytes) {
         PushStats.ChannelId = info.ChannelId;
         PopStats.ChannelId = info.ChannelId;
     }
@@ -379,6 +384,8 @@ public:
     NActors::TActorId PeerActorId;
     ui64 PeerGenMajor = 0;
     std::atomic<ui64> PopBytes;
+    ::NMonitoring::TDynamicCounters::TCounterPtr InputBufferBytes;
+    ui64 PushBytesDelta = 0;
 };
 
 class TInputBufferProxy : public IChannelBuffer {
@@ -447,11 +454,13 @@ public:
         , Reconcilation(false)
     {
         OutputBufferCount = counters->GetCounter("OutputBuffer/Count", false);
+        OutputBufferBytes = counters->GetCounter("OutputBuffer/Bytes", true);
         OutputBufferInflightBytes = counters->GetCounter("OutputBuffer/InflightBytes", false);
         OutputBufferInflightMessages = counters->GetCounter("OutputBuffer/InflightMessages", false);
         OutputBufferWaiterCount = counters->GetCounter("OutputBuffer/WaiterCount", false);
         OutputBufferWaiterMessages = counters->GetCounter("OutputBuffer/WaiterMessages", false);
         InputBufferCount = counters->GetCounter("InputBuffer/Count", false);
+        InputBufferBytes = counters->GetCounter("InputBuffer/Bytes", true);
     }
 
     virtual ~TNodeState();
@@ -505,11 +514,13 @@ public:
     const TDuration UnbindedWaitPeriod = TDuration::Minutes(10);
     std::atomic<ui64> Reconcilation;
     ::NMonitoring::TDynamicCounters::TCounterPtr OutputBufferCount;
+    ::NMonitoring::TDynamicCounters::TCounterPtr OutputBufferBytes;
     ::NMonitoring::TDynamicCounters::TCounterPtr OutputBufferInflightBytes;
     ::NMonitoring::TDynamicCounters::TCounterPtr OutputBufferInflightMessages;
     ::NMonitoring::TDynamicCounters::TCounterPtr OutputBufferWaiterCount;
     ::NMonitoring::TDynamicCounters::TCounterPtr OutputBufferWaiterMessages;
     ::NMonitoring::TDynamicCounters::TCounterPtr InputBufferCount;
+    ::NMonitoring::TDynamicCounters::TCounterPtr InputBufferBytes;
 };
 
 class TDebugNodeState : public TNodeState {
