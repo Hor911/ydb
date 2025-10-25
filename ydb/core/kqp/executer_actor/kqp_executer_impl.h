@@ -372,22 +372,24 @@ protected:
 
             const bool trailingResults = data.Finished && Request.IsTrailingResultsAllowed();
 
-            TVector<NYql::NDq::TDqSerializedBatch> batches(1);
-            auto& batch = batches.front();
+            if (!data.Buffer.Empty()) {
+                TVector<NYql::NDq::TDqSerializedBatch> batches(1);
+                auto& batch = batches.front();
 
-            batch.Payload = std::move(data.Buffer);
-            batch.Proto.SetTransportVersion(data.TransportVersion);
-            batch.Proto.SetChunks(1);
-            batch.Proto.SetRows(data.Rows);
-            batch.Proto.SetValuePackerVersion(NYql::NDq::ToProto(data.PackerVersion));
+                batch.Payload = std::move(data.Buffer);
+                batch.Proto.SetTransportVersion(data.TransportVersion);
+                batch.Proto.SetChunks(1);
+                batch.Proto.SetRows(data.Rows);
+                batch.Proto.SetValuePackerVersion(NYql::NDq::ToProto(data.PackerVersion));
 
-            if (streamingAllowed && !trailingResults) {
-                ui32 seqNo = 1;
-                SendStreamData(txResult, std::move(batches), channel.Id, seqNo, data.Finished);
-            } else {
-                ResponseEv->TakeResult(channel.DstInputIndex, std::move(batch));
-                if (streamingAllowed) {
-                    txResult.HasTrailingResult = true;
+                if (streamingAllowed && !trailingResults) {
+                    ui32 seqNo = 1;
+                    SendStreamData(txResult, std::move(batches), channel.Id, seqNo, data.Finished);
+                } else {
+                    ResponseEv->TakeResult(channel.DstInputIndex, std::move(batch));
+                    if (streamingAllowed) {
+                        txResult.HasTrailingResult = true;
+                    }
                 }
             }
 
@@ -1460,7 +1462,7 @@ IActor* CreateKqpScanExecuter(IKqpGateway::TExecPhysicalRequest&& request, const
     NYql::NDq::IDqAsyncIoFactory::TPtr asyncIoFactory,
     const TIntrusivePtr<TUserRequestContext>& userRequestContext, ui32 statementResultIndex,
     const std::optional<TKqpFederatedQuerySetup>& federatedQuerySetup, const TGUCSettings::TPtr& GUCSettings,
-    const std::optional<TLlvmSettings>& llvmSettings);
+    const std::optional<TLlvmSettings>& llvmSettings, std::shared_ptr<NYql::NDq::IDqChannelService> channelService);
 
 } // namespace NKqp
 } // namespace NKikimr
